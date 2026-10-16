@@ -1,0 +1,54 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      # Hosted runners do not reliably support multicast; mDNS tests run locally.
+      UP2P_SKIP_MDNS_TESTS: "1"
+      # Admin URL; every test node creates and drops its own database.
+      UP2P_TEST_DATABASE_URL: postgresql+psycopg://up2p:up2p@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Start PostgreSQL
+        uses: ikalnytskyi/action-setup-postgres@v6
+        with:
+          username: up2p
+          password: up2p
+          database: postgres
+          port: 5432
+      - name: Install
+        run: python -m pip install -e ".[test]"
+      - name: Test
+        run: python -m pytest -v
+
+  install-from-git:
+    # Installs the package exactly like an application would: from the Git URL.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install from GitHub
+        run: >
+          python -m pip install
+          "universal-p2p-sync @ git+${{ github.server_url }}/${{ github.repository }}@${{ github.sha }}"
+      - name: Smoke test
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -c "import universal_p2p_sync as u; print(u.__version__, u.SyncNode)"
+          python -m universal_p2p_sync identity --app-id ci --data-dir "${{ runner.temp }}/keys"
